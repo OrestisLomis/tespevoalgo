@@ -81,19 +81,18 @@ class r0735890:
         # self.dMatrixAlt = appZeroToVal(self.dMatrixAlt, self.dMatrixAlt.max()*2)
 
         self.dMatrixAlt = np.ma.masked_where(self.dMatrix == np.inf, self.dMatrix)
+        # print(self.dMatrixAlt)
         max_ = self.dMatrixAlt.max() * 2
+        # print(max_)
         self.dMatrixAlt = self.dMatrixAlt.filled(max_)
-        self.dMatrixAlt = np.ma.masked_where(self.dMatrix == 0, self.dMatrix)
-        self.dMatrixAlt = self.dMatrixAlt.filled(max_)
-
-
+        self.dMatrixAlt = np.ma.masked_where(self.dMatrixAlt == 0, self.dMatrixAlt)#.filled(max_)
 
         print(self.dMatrixAlt)
-        print(self.dMatrixAlt.argmin())
+        # print(self.dMatrixAlt.argmin())
 
         # Your code here.
         if True:
-            return initialize_NN(self.dMatrixAlt)
+            return greedy_det(self.dMatrixAlt)
         self.initialize()
         self.population.sort(key=lambda x: x[1])
 
@@ -160,8 +159,6 @@ class r0735890:
             fitness = self.fitness(chromosome)
             individual = (chromosome, fitness)
             self.population.append(individual)
-
-
 
     def recombination(self, parent1, parent2):
         """Parent1 and parent2 should be chromosomes"""
@@ -245,7 +242,6 @@ class r0735890:
         return father, mother
 
     """lambda+mu elimination"""
-
     def elimination(self, offspring):
         self.population.extend(offspring)
         self.population.sort(key=lambda x: x[1])
@@ -256,7 +252,7 @@ class r0735890:
         fitness = 0
         for i, j in enumerate(chromosome):
             # print(i,j)
-            fitness += self.dMatrixAlt[i, int(j)]
+            fitness += self.dMatrixAlt[i, j]
         return fitness
 
 
@@ -280,37 +276,149 @@ def delete(arr, i, a=0):
         return arr.transpose()[mask].transpose()
 
 
-
 def maskc(a, c):
     m = np.zeros_like(a)
     m[:, c] = 1
     return np.ma.masked_array(a, m)
 
 
-def initialize_NN(mat):
+def maskr(a, r):
+    m = np.zeros_like(a)
+    m[r] = 1
+    return np.ma.masked_array(a, m)
+
+
+def maskelm(a, r, c):
+    m = np.zeros_like(a)
+    m[r, c] = 1
+    return np.ma.masked_array(a, m)
+
+
+def initialize_NN_det_global(mat):
     print(mat)
-    print(mat[0,0])
+    print(mat[0, 0])
     size = np.shape(mat)[0]
 
-    chromosome = np.zeros(size)
+    chromosome = np.zeros(size, dtype=np.int64) - 1
     i = mat.argmin()
-    print(i)
-    r, c = i // size, i % size
-    print(r, c)
+    # print(i)
+    # r, c = i // size, i % size
+    r, c = np.column_stack(np.unravel_index(i, mat.shape))[0]
+    # print(r, c)
     first = r
     mat = maskc(mat, [r, c])
     chromosome[r] = c
-    print(chromosome)
-    for i in range(size - 1):
+    # print(chromosome)
+    for i in range(size - 2):
+        print(mat[c])
         r, c = c, mat[c].argmin()
         chromosome[r] = c
         # print(chromosome)
         mat = maskc(mat, c)
+        print(r, c)
+        # print(mat)
+    print(chromosome)
+    print(r, c, first)
+    r = c
+    chromosome[r] = first
+    return chromosome
+
+
+def initialize_NN_stoch_global(mat, k):
+    print(mat)
+    size = np.shape(mat)[0]
+
+    chromosome = np.ma.masked_all(size, dtype=np.int64)
+    # chromosome = np.zeros(size, dtype=np.int64)
+    # i = mat.argmin()
+    idx = k_smallest_index_argpartition(mat, k)
+    print(idx)
+    i = idx[np.random.randint(0, k)]
+    print(i)
+    # r, c = i // size, i % size
+    r, c = i
+    print(r, c)
+    first = r
+    mat = maskc(mat, [r, c])
+    mat = mat.filled(mat.max() * 100)
+    chromosome[r] = c
+    print(chromosome)
+    for i in range(size - 2):
+        offset = size - i - 2
+        offset = offset if offset < k else k
+        # print(mat[c])
+        idx = np.argsort(mat[c])[:offset]
+        print(idx)
+        r, c = c, np.random.choice(idx)
+        print(r, c)
+        chromosome[r] = c
+        # print(chromosome)
+        mat = maskc(mat, c)
+        # mat = mat.filled(mat.max()*100)
         # print(r, c)
         # print(mat)
 
-    chromosome[r] = first
+    chromosome[c] = first
     return chromosome
+
+
+def greedy_det(mat, k=1):
+    size = mat.shape[0]
+    chromosome = np.ma.masked_all(size, dtype=np.int64)
+    for i in range(size):
+        cycle = True
+        while cycle:
+            print(mat)
+            size = np.shape(mat)[0]
+
+
+            i = mat.argmin()
+            # idx = k_smallest_index_argpartition(mat, k)
+            # print(idx)
+            # i = idx[np.random.randint(0, k)]
+            # print(i)
+            # r, c = i // size, i % size
+            r, c = np.unravel_index(i, mat.shape)
+            print(r, c)
+            print(chromosome)
+            if check_cycle(chromosome, r, c):
+                mat = maskelm(mat, r, c)
+            else:
+                # print(r, c)
+                mat = maskc(mat, c)
+                mat = maskr(mat, r)
+                chromosome[r] = c
+                cycle = False
+                # print(chromosome)
+
+    for i in range(size):
+        print(i, mat[i])
+    return chromosome
+
+
+def k_smallest_index_argpartition(a, k):
+    idx = np.argsort(a.ravel())[:k]
+    print(idx)
+    print(a.argmin())
+    print(a.min())
+    return np.column_stack(np.unravel_index(idx, a.shape))
+
+
+def check_cycle(chromosome, r, c):
+    i = 1
+    curr_i = c
+    while i < len(chromosome) - 1:
+        next = chromosome[curr_i]
+        if next is np.ma.masked:
+            return False
+        if next == r:
+            print(next, r)
+            return True
+
+        curr_i = next
+        i += 1
+    return False
+
 
 # # For hyperparameter testing: run the algorithm several times if desired
 # number_of_runs = 1
@@ -349,6 +457,23 @@ def initialize_NN(mat):
 
 if __name__ == "__main__":
     test = r0735890()
-    res = test.optimize('./tour1000.csv')
+    res = test.optimize('./tour50.csv')
+    # res = convert_cycle_to_adj(res)
+    print(res)
+    for i in range(50):
+        if i not in res:
+            print(i)
+            print("oei")
     print(test.fitness(res))
+    # testarr = np.array([1,2,3,0])
+    # testarr = maskr(testarr, 0)
+    # print(testarr)
+    # print(check_cycle(testarr, 0, 1))
 
+# [15 36 11 24  0 48 41 25 26 3 28 33 9 32 31 2 45 34 23 27 44 30 18 39 10 14 4 8 35 19 20 22 5 7 47 42 43 38 29 1 49 17 13 16 37 6 40 12 46 21]
+# [41 36 11 24 15 48  0 25 26 3 28 33 9 32 31 2 45 34 23 27 44 30 18 39 10 14 4 8 35 19 20 22 5 7 47 42 43 38 29 1 49 17 13 16 37 6 40 12 46 21]
+
+
+# [26 36 11 24 0 42 45 27 25 12 5 33 47 32 31 4 1 3 23 8 21 30 14 39 9 15 22 19 13 10 44 49 41 7 18 28 43 38 29 6 46 17 35 -- 37 16 48 34 20 40]
+
+# [26 36 11 24 0 42 45 27 25 12 5 33 47 32 31 4 1 3 23 8 21 30 14 39 9 15 22 19 13 10 44 49 41 7 18 28 43 38 29 6 46 17 35 -- 37 16 48 34 20 40]
