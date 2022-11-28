@@ -11,7 +11,7 @@ from numba import njit
 
 
 # Modify the class name to match your student number.
-def convert_adj_to_cycle(chromosome):
+def convert_adj_to_cycle_full(chromosome):
     breaks = 0
     longest_cycle = 1
     clens = list([0] * 50)
@@ -36,14 +36,26 @@ def convert_adj_to_cycle(chromosome):
         clen += 1
         used.add(curr_i)
         curr_i = next
+    cycle.append(0)
     return cycle, breaks, longest_cycle, clens
+
+
+def convert_adj_to_cycle(chromosome):
+    cycle = [0]
+    curr_i = 0
+    used = set()
+    while len(used) < len(chromosome):
+        next = chromosome[curr_i]
+        cycle.append(next)
+        used.add(curr_i)
+        curr_i = next
+    return cycle
 
 
 def convert_cycle_to_adj(chromosome):
     adj = [-1] * len(chromosome)
     for i in range(len(chromosome) - 1):
         adj[chromosome[i]] = chromosome[i + 1]
-    adj[chromosome[-1]] = chromosome[0]
     return adj
 
 
@@ -56,11 +68,11 @@ class r0735890:
         # self.beta = 0.5 # deprecated
         self.population = []
         # max number of optimization cycles
-        self.k = 300
+        self.k = 1
         self.dMatrix = None
         self.dMatrixAlt = None
         self.tournament_size = 5
-        self.mu = 50
+        self.mu = 0
 
     def optimize(self, filename, plot_name='plot'):
         """The evolutionary algorithm's main loop"""
@@ -91,8 +103,8 @@ class r0735890:
         # print(self.dMatrixAlt.argmin())
 
         # Your code here.
-        if True:
-            return initialize_NN_stoch_global(self.dMatrixAlt, 1)
+        # if True:
+        #     return k_smallest_masked(self.dMatrixAlt.ravel(), 30)
         self.initialize()
         self.population.sort(key=lambda x: x[1])
 
@@ -122,7 +134,7 @@ class r0735890:
             #  - the best objective function value of the population
             #  - a 1D numpy array in the cycle notation containing the best solution
             #    with city numbering starting from 0
-            timeLeft = self.reporter.report(meanObjective, bestObjective, bestSolution)
+            timeLeft = self.reporter.report(meanObjective, bestObjective, np.array(convert_adj_to_cycle(bestSolution)))
             if timeLeft < 0:
                 break
         end = time.time()
@@ -131,6 +143,7 @@ class r0735890:
         number_of_seconds = time_diff % 60
         print(f"The algorithm took {number_of_minutes} minutes and {number_of_seconds} seconds.")
         print(f"The final best fitness value was {bestObjective}")
+        print(f"The final mean fitness value was {meanObjective}")
 
         # Plot the results
         # plt.figure(figsize=(7, 5))
@@ -153,12 +166,34 @@ class r0735890:
 
     def initialize(self):
         size = np.shape(self.dMatrix)[0]
-        for i in range(self.lambdaa):
+        print("initializing...")
+        print("---------------")
+        print("greedy...")
+        for i in range(round(self.lambdaa * 0.1)):
+            print(i)
+            chromosome = greedy_stoch(self.dMatrixAlt, 3)
+            fitness = self.fitness(chromosome)
+            individual = (chromosome, fitness)
+            self.population.append(individual)
+        print("greedy done!")
+        print("nearest neighbour...")
+        for i in range(round(self.lambdaa*0.1)):
+            print(i)
+            chromosome = initialize_NN_stoch_global(self.dMatrixAlt, 3)
+            fitness = self.fitness(chromosome)
+            individual = (chromosome, fitness)
+            self.population.append(individual)
+        print("nearest neighbour done!")
+        print("random...")
+        for i in range(round(self.lambdaa * 0.8)):
+            print(i)
             cycle = np.random.permutation(size)
             chromosome = convert_cycle_to_adj(cycle)
             fitness = self.fitness(chromosome)
             individual = (chromosome, fitness)
             self.population.append(individual)
+        print("random done!")
+        print("initialisation done!")
 
     def recombination(self, parent1, parent2):
         """Parent1 and parent2 should be chromosomes"""
@@ -325,32 +360,32 @@ def initialize_NN_det_global(mat):
 
 
 def initialize_NN_stoch_global(mat, k):
-    print(mat)
+    # print(mat)
     size = np.shape(mat)[0]
 
     chromosome = np.ma.masked_all(size, dtype=np.int64)
     # chromosome = np.zeros(size, dtype=np.int64)
     # i = mat.argmin()
-    idx = k_smallest_index_argpartition(mat, k)
-    print(idx)
-    i = idx[np.random.randint(0, k)]
-    print(i)
+    idx = k_smallest_masked(mat.ravel(), k)
+    # print(idx)
+    i = np.random.choice(idx, 1)[0]
+    # print(i)
     # r, c = i // size, i % size
-    r, c = i
-    print(r, c)
+    r, c = np.unravel_index(i, mat.shape)
+    # print(r, c)
     first = r
     mat = maskc(mat, [r, c])
     mat = mat.filled(mat.max() * 100)
     chromosome[r] = c
-    print(chromosome)
+    # print(chromosome)
     for i in range(size - 2):
         offset = size - i - 2
         offset = offset if offset < k else k
         # print(mat[c])
         idx = np.argsort(mat[c])[:offset]
-        print(idx)
+        # print(idx)
         r, c = c, np.random.choice(idx)
-        print(r, c)
+        # print(r, c)
         chromosome[r] = c
         # print(chromosome)
         mat = maskc(mat, c)
@@ -359,30 +394,6 @@ def initialize_NN_stoch_global(mat, k):
         # print(mat)
 
     chromosome[c] = first
-    return chromosome
-
-
-def greedy_det(mat):
-    size = mat.shape[0]
-    chromosome = np.ma.masked_all(size, dtype=np.int64)
-    for i in range(size):
-        cycle = True
-        while cycle:
-            print(mat)
-            i = mat.argmin()
-            r, c = np.unravel_index(i, mat.shape)
-            print(r, c)
-            print(chromosome)
-            if check_cycle(chromosome, r, c):
-                mat = maskelm(mat, r, c)
-            else:
-                # print(r, c)
-                mat = maskc(mat, c)
-                mat = maskr(mat, r)
-                chromosome[r] = c
-                cycle = False
-                # print(chromosome)
-
     return chromosome
 
 
@@ -395,13 +406,10 @@ def greedy_stoch(mat, k=1):
         offset = offset if offset < k else k
         while cycle:
             # print(mat)
-            idx = k_smallest_index_argpartition(mat, offset)
-            # print(idx)
-            i = idx[np.random.randint(0, offset)]
+            idx = k_smallest_masked(mat.ravel(), offset)
+            i = np.random.choice(idx, 1)[0]
             # print(i)
-            # r, c = i // size, i % size
-            # r, c = np.unravel_index(i, mat.shape)
-            r, c = i
+            r, c = np.unravel_index(i, mat.shape)
             # print(r, c)
             # print(chromosome)
             if check_cycle(chromosome, r, c):
@@ -417,18 +425,20 @@ def greedy_stoch(mat, k=1):
     return chromosome
 
 
-def k_smallest_index_argpartition(a, k):
-    idx = np.argsort(a.ravel())[:k]
-    # print(idx)
-    # print(a.argmin())
-    # print(a.min())
-    return np.column_stack(np.unravel_index(idx, a.shape))
+def k_smallest_masked(a, k):
+    res = []
+    for i in range(k):
+        argmin = a.argmin()
+        res.append(argmin)
+        a = maskr(a, argmin)
+    return res
 
 
 def check_cycle(chromosome, r, c):
     i = 1
     curr_i = c
     while i < len(chromosome) - 1:
+        # print(curr_i)
         next = chromosome[curr_i]
         if next is np.ma.masked:
             return False
@@ -478,15 +488,9 @@ def check_cycle(chromosome, r, c):
 
 if __name__ == "__main__":
     test = r0735890()
-    res = test.optimize('./tour750.csv')
-    # res = convert_cycle_to_adj(res)
+    start = time.time()
+    res = test.optimize('./tour50.csv')
     print(res)
-    for i in range(50):
-        if i not in res:
-            print(i)
-            print("oei")
-    print(test.fitness(res))
-    # testarr = np.array([1,2,3,0])
-    # testarr = maskr(testarr, 0)
-    # print(testarr)
-    # print(check_cycle(testarr, 0, 1))
+    end = time.time()
+    print(end-start)
+
